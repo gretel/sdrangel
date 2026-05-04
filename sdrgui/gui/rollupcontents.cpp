@@ -364,7 +364,7 @@ void RollupContents::mousePressEvent(QMouseEvent* event)
 
         if (r)
         {
-            if ((event->y() >= pos) && (event->y() < (pos + fm.height() + 3)))
+            if ((event->position().y() >= pos) && (event->position().y() < (pos + fm.height() + 3)))
             {
                 if (r->isHidden())
                 {

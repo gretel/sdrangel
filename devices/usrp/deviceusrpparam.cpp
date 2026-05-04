@@ -16,6 +16,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.          //
 ///////////////////////////////////////////////////////////////////////////////////
 
+#include <cstdlib>
+#include <string>
+
 #include <QDebug>
 #include "deviceusrpparam.h"
 
@@ -26,6 +29,22 @@ bool DeviceUSRPParams::open(const QString &deviceStr, bool channelNumOnly)
     try
     {
         std::string device_args(qPrintable(deviceStr));
+
+        // Optional master_clock_rate override via environment.
+        // Device-agnostic: applies to any UHD device that honors the
+        // master_clock_rate device-arg (B200, X300, N3xx, ...). Empty/unset =
+        // UHD picks MCR via auto_tick_rate (default behaviour). Used by
+        // headless harnesses to pin MCR for clean-decim TX/RX rates without
+        // round-tripping through SWG/REST.
+        if (const char *mcr_env = std::getenv("SDRANGEL_USRP_MASTER_CLOCK_RATE_HZ"))
+        {
+            if (mcr_env[0] != '\0' && device_args.find("master_clock_rate") == std::string::npos)
+            {
+                device_args += ",master_clock_rate=";
+                device_args += mcr_env;
+                qDebug("DeviceUSRPParams::open: SDRANGEL_USRP_MASTER_CLOCK_RATE_HZ=%s appended to device args", mcr_env);
+            }
+        }
 
         // For USB
         // The recv_frame_size must be a multiple of 8 bytes and not a multiple of 1024 bytes.

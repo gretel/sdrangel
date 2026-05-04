@@ -44,12 +44,12 @@ public:
     void setName(const QString& name);
     QString getName() const;
 
-    void resetToDefaults();
+    void resetToDefaults() override;
     virtual qint64 getCenterFrequency() const;
     virtual void setCenterFrequency(qint64 centerFrequency);
-    QByteArray serialize() const;
-    bool deserialize(const QByteArray& data);
-    virtual MessageQueue *getInputMessageQueue() { return &m_inputMessageQueue; }
+    QByteArray serialize() const override;
+    bool deserialize(const QByteArray& data) override;
+    MessageQueue *getInputMessageQueue() override { return &m_inputMessageQueue; }
     void setReplayTime(float time) override;
 
 private:

@@ -34,7 +34,7 @@
 class DeviceSampleSource;
 class BasebandSampleSink;
 
-class SDRBASE_API DSPDeviceSourceEngine : public QObject {
+class SDRBASE_API DSPDeviceSourceEngine final : public QObject {
 	Q_OBJECT
 
 public:

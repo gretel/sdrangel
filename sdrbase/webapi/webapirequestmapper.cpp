@@ -4875,6 +4875,11 @@ bool WebAPIRequestMapper::getChannelActions(
             channelActions->setRttyModActions(new SWGSDRangel::SWGRTTYModActions());
             channelActions->getRttyModActions()->fromJsonObject(actionsJsonObject);
         }
+        else if (channelActionsKey == "MeshcoreModActions")
+        {
+            channelActions->setMeshcoreModActions(new SWGSDRangel::SWGMeshcoreModActions());
+            channelActions->getMeshcoreModActions()->fromJsonObject(actionsJsonObject);
+        }
         else if (channelActionsKey == "SigMFFileSinkActions")
         {
             channelActions->setSigMfFileSinkActions(new SWGSDRangel::SWGSigMFFileSinkActions());

@@ -52,7 +52,7 @@ namespace SWGSDRangel {
     class SWGSuccessResponse;
 };
 
-class SDRGUI_API DeviceUISet : public QObject, public SerializableInterface
+class SDRGUI_API DeviceUISet final : public QObject, public SerializableInterface
 {
     Q_OBJECT
 public:

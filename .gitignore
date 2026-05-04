@@ -53,3 +53,12 @@ wdsp/*.o
 wdsp/*.h
 wdsp/*.c
 wdsp/Makefile
+
+# Local AI agent handoff notes — never commit
+CLAUDE.md
+
+# Local harness outputs
+tmp/
+tests/meshcore/results/
+.envrc
+.python-version

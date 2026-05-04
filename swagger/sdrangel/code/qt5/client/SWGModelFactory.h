@@ -228,8 +228,10 @@
 #include "SWGMapItem_2.h"
 #include "SWGMapReport.h"
 #include "SWGMapSettings.h"
+#include "SWGMeshcoreModActions.h"
 #include "SWGMeshtasticDemodReport.h"
 #include "SWGMeshtasticDemodSettings.h"
+#include "SWGMeshcoreModActions.h"
 #include "SWGMeshtasticModReport.h"
 #include "SWGMeshtasticModSettings.h"
 #include "SWGMetisMISOSettings.h"
@@ -1469,6 +1471,16 @@ namespace SWGSDRangel {
     }
     if(QString("SWGMapSettings").compare(type) == 0) {
       SWGMapSettings *obj = new SWGMapSettings();
+      obj->init();
+      return obj;
+    }
+    if(QString("SWGMeshcoreModActions").compare(type) == 0) {
+      SWGMeshcoreModActions *obj = new SWGMeshcoreModActions();
+      obj->init();
+      return obj;
+    }
+    if(QString("SWGMeshcoreModActions").compare(type) == 0) {
+      SWGMeshcoreModActions *obj = new SWGMeshcoreModActions();
       obj->init();
       return obj;
     }

@@ -51,14 +51,14 @@ protected:
     QString m_streamIndicator;
     QString m_helpURL;
 
-    void paintEvent(QPaintEvent*);
+    void paintEvent(QPaintEvent*) override;
     int paintRollup(QWidget* rollup, int pos, QPainter* p, bool last, const QColor& frameColor);
 
-    void resizeEvent(QResizeEvent* size);
-    void mousePressEvent(QMouseEvent* event);
+    void resizeEvent(QResizeEvent* size) override;
+    void mousePressEvent(QMouseEvent* event) override;
 
-    bool event(QEvent* event);
-    bool eventFilter(QObject* object, QEvent* event);
+    bool event(QEvent* event) override;
+    bool eventFilter(QObject* object, QEvent* event) override;
 
 private:
     static bool isRollupChild(QWidget *childWidget); //!< chidl is part of rollups (ex: not a dialog)

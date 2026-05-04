@@ -178,9 +178,9 @@ private:
     MessageQueue *m_managerMessageQueue;
 
 	//virtual bool open(OpenMode mode);
-	virtual qint64 readData(char* data, qint64 maxLen);
-	virtual qint64 writeData(const char* data, qint64 len);
-    virtual qint64 bytesAvailable() const override;
+	qint64 readData(char* data, qint64 maxLen) override;
+	qint64 writeData(const char* data, qint64 len) override;
+    qint64 bytesAvailable() const override;
     void writeSampleToFile(qint16 lSample, qint16 rSample);
     bool handleMessage(const Message& cmd);
 
