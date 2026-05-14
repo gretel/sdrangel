@@ -57,6 +57,8 @@ void MeshcoreModBaseband::reset()
 
 void MeshcoreModBaseband::pull(const SampleVector::iterator& begin, unsigned int nbSamples)
 {
+    handleInputMessages();
+
     unsigned int part1Begin, part1End, part2Begin, part2End;
     m_sampleFifo.read(nbSamples, part1Begin, part1End, part2Begin, part2End);
     SampleVector& data = m_sampleFifo.getData();

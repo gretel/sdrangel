@@ -42,7 +42,13 @@ class USRPOutputThread : public QThread, public DeviceUSRPShared::ThreadInterfac
     Q_OBJECT
 
 public:
-    USRPOutputThread(uhd::tx_streamer::sptr stream, size_t bufSamples, SampleSourceFifo* sampleFifo, QObject* parent = 0);
+    USRPOutputThread(uhd::tx_streamer::sptr stream,
+                     size_t bufSamples,
+                     SampleSourceFifo* sampleFifo,
+                     uhd::usrp::multi_usrp::sptr dev,
+                     size_t numChannels = 1,
+                     quint32 maxUnderflowCount = 0,
+                     QObject* parent = 0);
     ~USRPOutputThread();
 
     virtual void startWork();
@@ -66,13 +72,22 @@ private:
     size_t m_bufSamples;
     SampleSourceFifo* m_sampleFifo;
 
-    unsigned int m_log2Interp; // soft decimation
+    unsigned int m_log2Interp;
 
     Interpolators<qint16, SDR_TX_SAMP_SZ, 12> m_interpolators;
+
+    uhd::usrp::multi_usrp::sptr m_dev;
+    size_t m_numChannels;
+    quint32 m_maxUnderflowCount;
+
+    qint16 *m_zeroBuf;
+    bool m_burstActive;
+    quint32 m_consecutiveUnderflows;
 
     void run();
     qint32 callback(qint16* buf, qint32 len);
     void callbackPart(qint16* buf, SampleVector& data, unsigned int iBegin, unsigned int iEnd);
+    void sendEndOfBurst();
 };
 
 

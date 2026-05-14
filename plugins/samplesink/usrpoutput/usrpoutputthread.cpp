@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <algorithm>
+#include <chrono>
 
 #include <QDebug>
 
@@ -25,7 +26,13 @@
 
 #include "usrpoutputthread.h"
 
-USRPOutputThread::USRPOutputThread(uhd::tx_streamer::sptr stream, size_t bufSamples, SampleSourceFifo* sampleFifo, QObject* parent) :
+USRPOutputThread::USRPOutputThread(uhd::tx_streamer::sptr stream,
+                                   size_t bufSamples,
+                                   SampleSourceFifo* sampleFifo,
+                                   uhd::usrp::multi_usrp::sptr dev,
+                                   size_t numChannels,
+                                   quint32 maxUnderflowCount,
+                                   QObject* parent) :
     QThread(parent),
     m_running(false),
     m_packets(0),
@@ -34,27 +41,39 @@ USRPOutputThread::USRPOutputThread(uhd::tx_streamer::sptr stream, size_t bufSamp
     m_stream(stream),
     m_bufSamples(bufSamples),
     m_sampleFifo(sampleFifo),
-    m_log2Interp(0)
+    m_log2Interp(0),
+    m_dev(dev),
+    m_numChannels(std::max<size_t>(1, numChannels)),
+    m_maxUnderflowCount(maxUnderflowCount),
+    m_zeroBuf(nullptr),
+    m_burstActive(false),
+    m_consecutiveUnderflows(0)
 {
-    // *2 as samples are I+Q
     m_buf = new qint16[2 * bufSamples];
     std::fill(m_buf, m_buf + 2 * bufSamples, 0);
+
+    if (m_numChannels > 1) {
+        m_zeroBuf = new qint16[2 * bufSamples];
+        std::fill(m_zeroBuf, m_zeroBuf + 2 * bufSamples, 0);
+    }
 }
 
 USRPOutputThread::~USRPOutputThread()
 {
     stopWork();
     delete[] m_buf;
+    delete[] m_zeroBuf;
 }
 
 void USRPOutputThread::startWork()
 {
-    if (m_running) return; // return if running already
+    if (m_running) return;
 
-    // Reset stats
     m_packets = 0;
     m_underflows = 0;
     m_droppedPackets = 0;
+    m_burstActive = false;
+    m_consecutiveUnderflows = 0;
 
     m_startWaitMutex.lock();
     start();
@@ -66,24 +85,31 @@ void USRPOutputThread::startWork()
 
 void USRPOutputThread::stopWork()
 {
-    uhd::async_metadata_t md;
-
-    if (!m_running) return; // return if not running
+    if (!m_running) return;
 
     m_running = false;
     wait();
 
-    try
-    {
-        // Get message indicating underflow, so it doesn't appear if we restart
-        m_stream->recv_async_msg(md);
-    }
-    catch (std::exception& e)
-    {
-        qDebug() << "USRPOutputThread::stopWork: exception: " << e.what();
-    }
-
     qDebug("USRPOutputThread::stopWork: stream stopped");
+}
+
+void USRPOutputThread::sendEndOfBurst()
+{
+    if (!m_burstActive) return;
+    m_burstActive = false;
+
+    try {
+        uhd::tx_metadata_t md;
+        md.start_of_burst = false;
+        md.end_of_burst   = true;
+        md.has_time_spec  = false;
+
+        const void* nullBufs[2] = {m_buf, m_zeroBuf ? m_zeroBuf : m_buf};
+        const void* const* sendBufs = m_numChannels > 1 ? nullBufs : (const void* const*)(&nullBufs[0]);
+        m_stream->send(sendBufs, 0, md, 0.01);
+    } catch (std::exception& e) {
+        qDebug() << "USRPOutputThread::sendEndOfBurst: exception: " << e.what();
+    }
 }
 
 void USRPOutputThread::setLog2Interpolation(unsigned int log2_interp)
@@ -94,8 +120,6 @@ void USRPOutputThread::setLog2Interpolation(unsigned int log2_interp)
 void USRPOutputThread::run()
 {
     uhd::tx_metadata_t md;
-    md.start_of_burst = false;
-    md.end_of_burst   = false;
 
     m_running = true;
     m_startWaiter.wakeAll();
@@ -104,34 +128,56 @@ void USRPOutputThread::run()
 
     while (m_running)
     {
+        std::fill(m_buf, m_buf + 2 * m_bufSamples, 0);
+
         qint32 writtenSamples = callback(m_buf, m_bufSamples);
+
+        if (writtenSamples <= 0) {
+            QThread::usleep(100);
+            continue;
+        }
+
+        if (!m_burstActive) {
+            m_burstActive = true;
+            m_consecutiveUnderflows = 0;
+            md.start_of_burst = true;
+            md.end_of_burst   = false;
+            md.has_time_spec  = false;
+        } else {
+            md.start_of_burst = false;
+            md.end_of_burst   = false;
+            md.has_time_spec  = false;
+        }
 
         try
         {
-            const size_t sentSamples = m_stream->send(m_buf, writtenSamples, md);
+            size_t sentSamples = m_stream->send(m_buf, writtenSamples, md, 0.01);
             m_packets++;
-            if (sentSamples != writtenSamples) {
-                qDebug("USRPOutputThread::run sent %ld/%ld samples", sentSamples, writtenSamples);
-            }
         }
         catch (std::exception& e)
         {
             qDebug() << "USRPOutputThread::run: exception: " << e.what();
+            if (m_burstActive) {
+                sendEndOfBurst();
+            }
+            break;
         }
     }
 
+    if (m_burstActive) {
+        sendEndOfBurst();
+    }
+
     m_running = false;
+    qDebug("USRPOutputThread::run: exit");
 }
 
-// Interpolate according to specified log2 (ex: log2=4 => interpolate=16)
-// Returns the number of samples written to buf, which may be less than len, when the TX buffer is not divisible by the interpolation factor.
 qint32 USRPOutputThread::callback(qint16* buf, qint32 len)
 {
     const unsigned int interpolationFactor = 1U << m_log2Interp;
     SampleVector& data = m_sampleFifo->getData();
     unsigned int iPart1Begin, iPart1End, iPart2Begin, iPart2End;
 
-    // Truncation is intentional here: reading more would overrun the fixed TX buffer when len is not divisible by interpolation factor.
     m_sampleFifo->read(static_cast<unsigned int>(len)/interpolationFactor, iPart1Begin, iPart1End, iPart2Begin, iPart2End);
 
     if (iPart1Begin != iPart1End) {
@@ -199,7 +245,6 @@ void USRPOutputThread::getStreamStatus(bool& active, quint32& underflows, quint3
             m_droppedPackets++;
         }
     }
-    //qDebug() << "USRPOutputThread::getStreamStatus " << m_packets << " " << m_underflows << " " << m_droppedPackets;
     active = m_packets > 0;
     underflows = m_underflows;
     droppedPackets = m_droppedPackets;

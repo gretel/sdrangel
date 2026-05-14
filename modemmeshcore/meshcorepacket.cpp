@@ -15,6 +15,7 @@
 #include "meshcore_decoder.h"
 
 #include <QDebug>
+#include <QProcessEnvironment>
 
 namespace modemmeshcore
 {
@@ -35,6 +36,17 @@ QString stripPrefix(const QString& cmd)
 }
 
 } // namespace
+
+QString Packet::defaultKeysFromEnv()
+{
+    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString keys = env.value(QStringLiteral("SDRANGEL_MESHCORE_KEYS")).trimmed();
+    if (!keys.isEmpty()) {
+        qInfo("modemmeshcore::Packet::defaultKeysFromEnv: using SDRANGEL_MESHCORE_KEYS");
+        return keys;
+    }
+    return {};
+}
 
 bool Packet::isCommand(const QString& text)
 {
