@@ -831,7 +831,16 @@ bool MeshcoreDemod::handleMessage(const Message& cmd)
         //                                   without the operator typing it
         //                                   in the Keys dialog.
         // Both are no-ops if the operator already supplied them.
-        QString effectiveKeys = m_settings.m_meshcoreKeySpecList;
+        //
+        // Environment override: SDRANGEL_MESHCORE_KEYS prepends key specs,
+        // useful for CI/headless testing. GUI-specified keys come next so
+        // they can still contribute (both env and GUI keys are tried).
+        QString envKeys = modemmeshcore::Packet::defaultKeysFromEnv();
+        QString effectiveKeys = envKeys.isEmpty()
+            ? m_settings.m_meshcoreKeySpecList
+            : (m_settings.m_meshcoreKeySpecList.isEmpty()
+                ? envKeys
+                : envKeys + QStringLiteral("; ") + m_settings.m_meshcoreKeySpecList);
         auto appendSep = [&](){
             if (!effectiveKeys.isEmpty()
                 && !effectiveKeys.endsWith(QChar(';'))) {

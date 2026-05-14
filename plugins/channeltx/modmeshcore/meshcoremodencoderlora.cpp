@@ -21,9 +21,33 @@
 
 void MeshcoreModEncoderLoRa::addChecksum(QByteArray& bytes)
 {
-    uint16_t crc = sx1272DataChecksum(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
-    bytes.append(crc & 0xff);
-    bytes.append((crc >> 8) & 0xff);
+    // Standard LoRa payload CRC per lora_payload_crc (gr4-lora crc.hpp):
+    //   1. CRC-16-CCITT (0x1021) over first (size - 2) bytes
+    //   2. XOR result with last 2 bytes as uint16 LE
+    // This matches the SX1262 hardware CRC in explicit header mode.
+    if (bytes.size() < 2) {
+        bytes.append(static_cast<char>(0));
+        bytes.append(static_cast<char>(0));
+        return;
+    }
+
+    uint16_t crc = 0x0000;
+    for (int i = 0; i < bytes.size() - 2; i++) {
+        crc ^= static_cast<uint16_t>(static_cast<uint8_t>(bytes[i])) << 8;
+        for (int j = 0; j < 8; j++) {
+            if (crc & 0x8000) {
+                crc = static_cast<uint16_t>((crc << 1) ^ 0x1021);
+            } else {
+                crc = static_cast<uint16_t>(crc << 1);
+            }
+        }
+    }
+
+    crc ^= static_cast<uint16_t>(static_cast<uint8_t>(bytes[bytes.size() - 1]));
+    crc ^= static_cast<uint16_t>(static_cast<uint8_t>(bytes[bytes.size() - 2])) << 8;
+
+    bytes.append(static_cast<char>(crc & 0xff));
+    bytes.append(static_cast<char>((crc >> 8) & 0xff));
 }
 
 void MeshcoreModEncoderLoRa::encodeBytes(
@@ -69,7 +93,23 @@ void MeshcoreModEncoderLoRa::encodeBytes(
         unsigned int payloadSize = bytes.size() - (hasCRC ? 2 : 0); // actual payload size is without CRC
         hdr[0] = payloadSize % 256;
         hdr[1] = (hasCRC ? 1 : 0) | (nbParityBits << 1);
-        hdr[2] = headerChecksum(hdr.data());
+        // Standard LoRa header checksum per Tapparel & Burg Section III-A.
+        // XOR-based checksum from 3 header nibbles:
+        //   n0 = length_hi, n1 = length_lo, n2 = (cr<<1)|has_crc
+        {
+            uint8_t n0 = (hdr[0] >> 4) & 0x0F;
+            uint8_t n1 = hdr[0] & 0x0F;
+            uint8_t n2 = hdr[1] & 0x0F;
+            bool a0 = (n0 >> 3) & 1, a1 = (n0 >> 2) & 1, a2 = (n0 >> 1) & 1, a3 = n0 & 1;
+            bool a4 = (n1 >> 3) & 1, a5 = (n1 >> 2) & 1, a6 = (n1 >> 1) & 1, a7 = n1 & 1;
+            bool a8 = (n2 >> 3) & 1, a9 = (n2 >> 2) & 1, a10 = (n2 >> 1) & 1, a11 = n2 & 1;
+            bool c4 = a0 ^ a1 ^ a2 ^ a3;
+            bool c3 = a0 ^ a4 ^ a5 ^ a6 ^ a11;
+            bool c2 = a1 ^ a4 ^ a7 ^ a8 ^ a10;
+            bool c1 = a2 ^ a5 ^ a7 ^ a9 ^ a10 ^ a11;
+            bool c0 = a3 ^ a6 ^ a8 ^ a9 ^ a10 ^ a11;
+            hdr[2] = static_cast<uint8_t>((c4 << 4) | (c3 << 3) | (c2 << 2) | (c1 << 1) | c0);
+        }
 
         // Nibble decomposition and parity bit(s) addition. LSNibble first.
         codewords[cOfs++] = encodeHamming84sx(hdr[0] >> 4);
@@ -79,40 +119,63 @@ void MeshcoreModEncoderLoRa::encodeBytes(
         codewords[cOfs++] = encodeHamming84sx(hdr[2] & 0xf);
     }
 
-    // Fill first interleaver block (explicit header + first payload codewords) with 4/8 FEC.
-    if (firstBlockCodewords > headerSize)
-    {
-        encodeFec(
-            codewords,
-            4,
-            cOfs,
-            dOfs,
-            reinterpret_cast<const uint8_t*>(bytes.data()),
-            bytes.size(),
-            firstBlockCodewords - headerSize
-        );
-        Sx1272ComputeWhitening(codewords.data() + headerSize, firstBlockCodewords - headerSize, 0, headerParityBits);
-    }
+    // Pre-FEC whitening: whiten data nibbles before Hamming FEC encoding.
+    // Standard LoRa order: payload -> whiten -> Hamming FEC -> interleave -> gray.
+    // CRC nibbles are NOT whitened — only actual payload data.
+    const unsigned int payloadNibblesOnly = bytes.size() * 2U - (hasCRC ? 4U : 0U);
+    const unsigned int totalPayloadNibbles = firstBlockCodewords > headerSize
+        ? (firstBlockCodewords - headerSize + remainingCodewords)
+        : 0U;
 
-    // Encode and whiten remaining payload blocks with payload coding rate.
-    if (remainingCodewords > 0U)
+    if (totalPayloadNibbles > 0U)
     {
-        unsigned int cOfs2 = cOfs;
-        encodeFec(
-            codewords,
-            nbParityBits,
-            cOfs,
-            dOfs,
-            reinterpret_cast<const uint8_t*>(bytes.data()),
-            bytes.size(),
-            remainingCodewords
-        );
-        Sx1272ComputeWhitening(
-            codewords.data() + cOfs2,
-            remainingCodewords,
-            static_cast<int>(firstBlockCodewords - headerSize),
-            nbParityBits
-        );
+        std::vector<uint8_t> nibbles(totalPayloadNibbles, 0);
+        const uint8_t *rawBytes = reinterpret_cast<const uint8_t*>(bytes.data());
+
+        for (unsigned int i = 0; i < totalPayloadNibbles; i++)
+        {
+            unsigned int byteIdx = i / 2;
+            if (byteIdx < static_cast<unsigned int>(bytes.size())) {
+                nibbles[i] = (i % 2 == 0)
+                    ? (rawBytes[byteIdx] & 0xf)
+                    : ((rawBytes[byteIdx] >> 4) & 0xf);
+            }
+        }
+
+        // Whiten payload nibbles only (not CRC nibbles).
+        if (payloadNibblesOnly > 0) {
+            loRaWhitenNibbles(nibbles.data(), std::min(payloadNibblesOnly, totalPayloadNibbles), 0);
+        }
+
+        // Fill first interleaver block (explicit header + first payload codewords) with 4/8 FEC.
+        if (firstBlockCodewords > headerSize)
+        {
+            const unsigned int payloadNibblesInFirst = firstBlockCodewords - headerSize;
+
+            for (unsigned int i = 0; i < payloadNibblesInFirst; i++, dOfs++) {
+                codewords[cOfs++] = encodeHamming84sx(nibbles[i]);
+            }
+        }
+
+        // Encode remaining payload blocks with payload coding rate.
+        if (remainingCodewords > 0U)
+        {
+            const unsigned int payloadNibblesInFirst = firstBlockCodewords - headerSize;
+
+            for (unsigned int i = 0; i < remainingCodewords; i++, dOfs++)
+            {
+                uint8_t nib = nibbles[payloadNibblesInFirst + i];
+                if (nbParityBits == 1) {
+                    codewords[cOfs++] = encodeParity54(nib);
+                } else if (nbParityBits == 2) {
+                    codewords[cOfs++] = encodeParity64(nib);
+                } else if (nbParityBits == 3) {
+                    codewords[cOfs++] = encodeHamming74sx(nib);
+                } else {
+                    codewords[cOfs++] = encodeHamming84sx(nib);
+                }
+            }
+        }
     }
 
     const unsigned int numSymbols = hasHeader
@@ -126,6 +189,17 @@ void MeshcoreModEncoderLoRa::encodeBytes(
     if (hasHeader)
     {
         diagonalInterleaveSx(codewords.data(), firstBlockCodewords, symbols.data(), headerNbSymbolBits, headerParityBits);
+
+        // Add even parity bit at position headerNbSymbolBits for each
+        // header symbol.  Standard LoRa header uses reduced rate:
+        // sf_app = sf-2 data bits + 1 even parity bit + zero padding.
+        for (unsigned int i = 0; i < headerSymbols; i++) {
+            bool parity = false;
+            for (unsigned int b = 0; b < headerNbSymbolBits; b++) {
+                parity ^= static_cast<bool>((symbols[i] >> b) & 1);
+            }
+            symbols[i] |= (static_cast<unsigned short>(parity) << headerNbSymbolBits);
+        }
 
         if (remainingCodewords > 0U) {
             diagonalInterleaveSx(
@@ -148,60 +222,4 @@ void MeshcoreModEncoderLoRa::encodeBytes(
     }
 }
 
-void MeshcoreModEncoderLoRa::encodeFec(
-        std::vector<uint8_t> &codewords,
-        unsigned int nbParityBits,
-        unsigned int& cOfs,
-        unsigned int& dOfs,
-        const uint8_t *bytes,
-        const unsigned int bytesLength,
-        const unsigned int codewordCount
-)
-{
-    for (unsigned int i = 0; i < codewordCount; i++, dOfs++)
-    {
-        const unsigned int byteIdx = dOfs / 2;
-        const uint8_t byteVal = byteIdx < bytesLength ? bytes[byteIdx] : 0U;
 
-        if (nbParityBits == 1)
-        {
-            if (dOfs % 2 == 1) {
-                codewords[cOfs++] = encodeParity54(byteVal >> 4);
-            } else {
-                codewords[cOfs++] = encodeParity54(byteVal & 0xf);
-            }
-        }
-        else if (nbParityBits == 2)
-        {
-            if (dOfs % 2 == 1) {
-                codewords[cOfs++] = encodeParity64(byteVal >> 4);
-            } else {
-                codewords[cOfs++] = encodeParity64(byteVal & 0xf);
-            }
-        }
-        else if (nbParityBits == 3)
-        {
-            if (dOfs % 2 == 1) {
-                codewords[cOfs++] = encodeHamming74sx(byteVal >> 4);
-            } else {
-                codewords[cOfs++] = encodeHamming74sx(byteVal & 0xf);
-            }
-        }
-        else if (nbParityBits == 4)
-        {
-            if (dOfs % 2 == 1) {
-                codewords[cOfs++] = encodeHamming84sx(byteVal >> 4);
-            } else {
-                codewords[cOfs++] = encodeHamming84sx(byteVal & 0xf);
-            }
-        }
-        else
-        {
-            if (dOfs % 2 == 1) {
-                codewords[cOfs++] = byteVal >> 4;
-            } else {
-                codewords[cOfs++] = byteVal & 0xf;
-            }
-        }
-    }
-}

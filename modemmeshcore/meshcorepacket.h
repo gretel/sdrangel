@@ -19,6 +19,7 @@
 #define MODEMMESHCORE_MESHCOREPACKET_H_
 
 #include <QByteArray>
+#include <QProcessEnvironment>
 #include <QString>
 #include <QtGlobal>
 #include <QVector>
@@ -177,6 +178,8 @@ public:
         QString& error,
         int* keyCount = nullptr
     );
+
+    static QString defaultKeysFromEnv();
 
     static bool deriveTxRadioSettings(
         const QString& command,
