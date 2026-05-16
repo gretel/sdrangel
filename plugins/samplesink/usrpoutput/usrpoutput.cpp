@@ -697,19 +697,21 @@ bool USRPOutput::handleMessage(const Message& message)
                 bool active;
                 quint32 underflows;
                 quint32 droppedPackets;
+                quint32 errors;
 
-                m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets);
+                m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets, errors);
                 MsgReportStreamInfo *report = MsgReportStreamInfo::create(
                         true, // success
                         active,
                         underflows,
-                        droppedPackets
+                        droppedPackets,
+                        errors
                         );
                 m_deviceAPI->getSamplingDeviceGUIMessageQueue()->push(report);
             }
             else
             {
-                MsgReportStreamInfo *report = MsgReportStreamInfo::create(false, false, 0, 0);
+                MsgReportStreamInfo *report = MsgReportStreamInfo::create(false, false, 0, 0, 0);
                 m_deviceAPI->getSamplingDeviceGUIMessageQueue()->push(report);
             }
         }
@@ -1199,10 +1201,11 @@ void USRPOutput::webapiFormatDeviceReport(SWGSDRangel::SWGDeviceReport& response
     bool active = false;
     quint32 underflows = 0;
     quint32 droppedPackets = 0;
+    quint32 errors = 0;
 
     if ((m_streamId != nullptr) && (m_usrpOutputThread != nullptr) && m_channelAcquired)
     {
-        m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets);
+        m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets, errors);
         success = true;
     }
 
@@ -1210,6 +1213,7 @@ void USRPOutput::webapiFormatDeviceReport(SWGSDRangel::SWGDeviceReport& response
     response.getUsrpOutputReport()->setStreamActive(active ? 1 : 0);
     response.getUsrpOutputReport()->setUnderrunCount(underflows);
     response.getUsrpOutputReport()->setDroppedPacketsCount(droppedPackets);
+    // Note: errors count not exposed via SWGUSRPOutputReport — add field to swagger spec when next updated
 }
 
 void USRPOutput::webapiReverseSendSettings(const QList<QString>& deviceSettingsKeys, const USRPOutputSettings& settings, bool force)

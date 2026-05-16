@@ -125,19 +125,22 @@ public:
         bool     getActive() const { return m_active; }
         uint32_t getUnderrun() const { return m_underrun; }
         uint32_t getDroppedPackets() const { return m_droppedPackets; }
+        uint32_t getErrors() const { return m_errors; }
 
         static MsgReportStreamInfo* create(
                 bool     success,
                 bool     active,
                 uint32_t underrun,
-                uint32_t droppedPackets
+                uint32_t droppedPackets,
+                uint32_t errors
                 )
         {
             return new MsgReportStreamInfo(
                     success,
                     active,
                     underrun,
-                    droppedPackets
+                    droppedPackets,
+                    errors
                     );
         }
 
@@ -146,18 +149,21 @@ public:
         bool     m_active;              //!< Indicates whether the stream is currently active
         uint32_t m_underrun;            //!< FIFO underrun count
         uint32_t m_droppedPackets;      //!< Number of dropped packets by HW
+        uint32_t m_errors;              //!< Number of fatal stream exceptions
 
         MsgReportStreamInfo(
                 bool     success,
                 bool     active,
                 uint32_t underrun,
-                uint32_t droppedPackets
+                uint32_t droppedPackets,
+                uint32_t errors
                 ) :
             Message(),
             m_success(success),
             m_active(active),
             m_underrun(underrun),
-            m_droppedPackets(droppedPackets)
+            m_droppedPackets(droppedPackets),
+            m_errors(errors)
         { }
     };
 

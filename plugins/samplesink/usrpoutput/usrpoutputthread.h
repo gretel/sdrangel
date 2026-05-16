@@ -56,7 +56,7 @@ public:
     virtual void setDeviceSampleRate(int sampleRate) { (void) sampleRate; }
     virtual bool isRunning() { return m_running; }
     void setLog2Interpolation(unsigned int log2_ioterp);
-    void getStreamStatus(bool& active, quint32& underflows, quint32& droppedPackets);
+    void getStreamStatus(bool& active, quint32& underflows, quint32& droppedPackets, quint32& errors);
 
 private:
     QMutex m_startWaitMutex;
@@ -66,6 +66,7 @@ private:
     quint64 m_packets;
     quint32 m_underflows;
     quint32 m_droppedPackets;
+    quint32 m_errors;
 
     uhd::tx_streamer::sptr m_stream;
     qint16 *m_buf;

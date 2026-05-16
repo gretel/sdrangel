@@ -38,6 +38,7 @@ USRPOutputThread::USRPOutputThread(uhd::tx_streamer::sptr stream,
     m_packets(0),
     m_underflows(0),
     m_droppedPackets(0),
+    m_errors(0),
     m_stream(stream),
     m_bufSamples(bufSamples),
     m_sampleFifo(sampleFifo),
@@ -72,6 +73,7 @@ void USRPOutputThread::startWork()
     m_packets = 0;
     m_underflows = 0;
     m_droppedPackets = 0;
+    m_errors = 0;
     m_burstActive = false;
     m_consecutiveUnderflows = 0;
 
@@ -156,6 +158,7 @@ void USRPOutputThread::run()
         }
         catch (std::exception& e)
         {
+            m_errors++;
             qDebug() << "USRPOutputThread::run: exception: " << e.what();
             if (m_burstActive) {
                 sendEndOfBurst();
@@ -230,7 +233,7 @@ void USRPOutputThread::callbackPart(qint16* buf, SampleVector& data, unsigned in
     }
 }
 
-void USRPOutputThread::getStreamStatus(bool& active, quint32& underflows, quint32& droppedPackets)
+void USRPOutputThread::getStreamStatus(bool& active, quint32& underflows, quint32& droppedPackets, quint32& errors)
 {
     uhd::async_metadata_t md;
 
@@ -248,4 +251,5 @@ void USRPOutputThread::getStreamStatus(bool& active, quint32& underflows, quint3
     active = m_packets > 0;
     underflows = m_underflows;
     droppedPackets = m_droppedPackets;
+    errors = m_errors;
 }
