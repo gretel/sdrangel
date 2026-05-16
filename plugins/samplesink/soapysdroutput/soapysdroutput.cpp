@@ -39,6 +39,8 @@
 MESSAGE_CLASS_DEFINITION(SoapySDROutput::MsgConfigureSoapySDROutput, Message)
 MESSAGE_CLASS_DEFINITION(SoapySDROutput::MsgStartStop, Message)
 MESSAGE_CLASS_DEFINITION(SoapySDROutput::MsgReportGainChange, Message)
+MESSAGE_CLASS_DEFINITION(SoapySDROutput::MsgGetStreamInfo, Message)
+MESSAGE_CLASS_DEFINITION(SoapySDROutput::MsgReportStreamInfo, Message)
 
 SoapySDROutput::SoapySDROutput(DeviceAPI *deviceAPI) :
     m_deviceAPI(deviceAPI),
@@ -840,6 +842,35 @@ bool SoapySDROutput::handleMessage(const Message& message)
 
         if (m_settings.m_useReverseAPI) {
             webapiReverseSendStartStop(cmd.getStartStop());
+        }
+
+        return true;
+    }
+    else if (MsgGetStreamInfo::match(message))
+    {
+        if (m_deviceAPI->getSamplingDeviceGUIMessageQueue())
+        {
+            if (m_thread && m_running)
+            {
+                bool active;
+                quint64 packets;
+                quint32 underflows;
+                quint32 errors;
+                m_thread->getStreamStatus(active, packets, underflows, errors);
+                (void) packets;
+                MsgReportStreamInfo *report = MsgReportStreamInfo::create(
+                        true,
+                        active,
+                        underflows,
+                        errors
+                        );
+                m_deviceAPI->getSamplingDeviceGUIMessageQueue()->push(report);
+            }
+            else
+            {
+                MsgReportStreamInfo *report = MsgReportStreamInfo::create(false, false, 0, 0);
+                m_deviceAPI->getSamplingDeviceGUIMessageQueue()->push(report);
+            }
         }
 
         return true;
@@ -1721,6 +1752,31 @@ void SoapySDROutput::webapiFormatDeviceReport(SWGSDRangel::SWGDeviceReport& resp
     {
         response.getSoapySdrOutputReport()->getStreamSettingsArgs()->append(new SWGSDRangel::SWGArgInfo);
         webapiFormatArgInfo(itArg, response.getSoapySdrOutputReport()->getStreamSettingsArgs()->back());
+    }
+
+    // Append TX diagnostic counters
+    if (m_thread)
+    {
+        bool active;
+        quint64 packets;
+        quint32 underflows;
+        quint32 errors;
+        m_thread->getStreamStatus(active, packets, underflows, errors);
+        (void) active;
+
+        auto addCounter = [&](const std::string& key, const std::string& name, const std::string& value) {
+            SoapySDR::ArgInfo info;
+            info.key = key;
+            info.value = value;
+            info.type = SoapySDR::ArgInfo::STRING;
+            info.name = name;
+            response.getSoapySdrOutputReport()->getStreamSettingsArgs()->append(new SWGSDRangel::SWGArgInfo);
+            webapiFormatArgInfo(info, response.getSoapySdrOutputReport()->getStreamSettingsArgs()->back());
+        };
+
+        addCounter("packets", "TX packets sent", std::to_string(packets));
+        addCounter("underflows", "TX underflow events", std::to_string(underflows));
+        addCounter("errors", "TX fatal errors", std::to_string(errors));
     }
 
     response.getSoapySdrOutputReport()->setFrequencySettingsArgs(new QList<SWGSDRangel::SWGArgInfo*>);

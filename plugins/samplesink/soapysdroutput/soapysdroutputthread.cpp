@@ -30,7 +30,11 @@ SoapySDROutputThread::SoapySDROutputThread(SoapySDR::Device* dev, unsigned int n
     m_dev(dev),
     m_sampleRate(0),
     m_nbChannels(nbTxChannels),
-    m_interpolatorType(InterpolatorFloat)
+    m_interpolatorType(InterpolatorFloat),
+    m_packets(0),
+    m_underflows(0),
+    m_errors(0),
+    m_consecutiveErrors(0)
 {
     qDebug("SoapySDROutputThread::SoapySDROutputThread");
     m_channels = new Channel[nbTxChannels];
@@ -52,6 +56,12 @@ void SoapySDROutputThread::startWork()
     if (m_running) {
         return;
     }
+
+    // Reset diagnostic counters for new session
+    m_packets = 0;
+    m_underflows = 0;
+    m_errors = 0;
+    m_consecutiveErrors = 0;
 
     m_startWaitMutex.lock();
     start();
@@ -86,12 +96,7 @@ void SoapySDROutputThread::run()
         std::vector<std::size_t> channels(m_nbChannels);
         std::iota(channels.begin(), channels.end(), 0); // Fill with 0, 1, ..., m_nbChannels-1.
 
-        // Initialize sample rate for all channels.  MCR is not pinned
-        // here — lora_trx does setMasterClockRate(24 MHz) but SDRangel's
-        // chain can't tolerate the MCR change mid-stream (cascading FIFO
-        // overruns in the SampleSourceFifo chain).  The device engine
-        // settled at the MCR that applySettings negotiated; changing it
-        // here breaks the baseband rate.
+        //initialize the sample rate for all channels
         qDebug("SoapySDROutputThread::run: m_sampleRate: %u", m_sampleRate);
         for (const auto &it : channels) {
             m_dev->setSampleRate(SOAPY_SDR_TX, it, m_sampleRate);
@@ -136,22 +141,18 @@ void SoapySDROutputThread::run()
             buffs[i] = buffMem[i].data();
         }
 
-        // Activate stream at thread start (untimed).  Every write uses
-        // HAS_TIME with monotonically increasing timestamps from the
-        // activation time base.  lora_trx activates at start + per-burst
-        // getHardwareTime() — we use sample-count-based timing instead
-        // for continuous pacing.
+        // Activate stream at thread start (untimed).  USRPOutputThread
+        // never uses has_time_spec — match that behavior.  HAS_TIME on
+        // first write stalls UHD waiting for the future timestamp which
+        // fills the TX ring buffer → writeStream timeouts → USB transport
+        // corruption → LIBUSB_ERROR_NOT_FOUND.
         m_dev->activateStream(stream);
-        long long timeBase = 0;
-        try {
-            timeBase = m_dev->getHardwareTime();
-        } catch (...) {}
-        qCritical("SoapySDROutputThread::run: timeBase=%lld", timeBase);
+        // Gain applied by SoapySDROutput::start() after thread is active.
+        // Do NOT set gain here — setGain before stream activation is a
+        // no-op on SoapyUHD/B210, and reading back returns 0.
         int writeFlags(0);
         long long timeNs(0);
-        long timeoutUs = 100000; // 100ms max block per writeStream
-        unsigned long long sampleCount = 0;
-        double sps = static_cast<double>(m_sampleRate);
+        long timeoutUs = 10000; // 10ms max block per writeStream
 
         {
             double actFreq = m_dev->getFrequency(SOAPY_SDR_TX, channels[0]);
@@ -173,8 +174,7 @@ void SoapySDROutputThread::run()
 
         while (m_running)
         {
-            // Zero buffers before fill — prevents stale data.
-            // lora_trx SoapySink always zero-fills idle periods — never skips.
+            // Zero buffers before fill — prevents stale data
             for (auto& buf : buffMem) {
                 std::fill(buf.begin(), buf.end(), 0);
             }
@@ -200,49 +200,44 @@ void SoapySDROutputThread::run()
                 }
             }
 
-            // Always writeStream (zeros or data) to keep UHD TX buffer
-            // flowing.  Idle-skip creates RF gaps that corrupt receiver
-            // preamble detection.  lora_trx always writes zeros and never
-            // skips — we match that behavior with real-time pacing.
-            // Every write gets HAS_TIME with monotonically increasing
-            // timestamps from the activation time base.
-            if (timeBase != 0) {
-                timeNs = timeBase + static_cast<long long>(static_cast<double>(sampleCount) / sps * 1e9);
-                writeFlags = SOAPY_SDR_HAS_TIME;
-            } else {
-                writeFlags = 0;
-                timeNs = 0;
+            // Idle-skip: when FIFO is empty, sleep and retry.
+            // Matches USRPOutputThread behavior.
+            bool hasNonZero = false;
+            for (unsigned int i = 0; i < m_nbChannels && !hasNonZero; i++) {
+                const char* p = buffMem[i].data();
+                const char* end = p + std::min<size_t>(16, buffMem[i].size());
+                while (p < end) {
+                    if (*p++ != 0) { hasNonZero = true; break; }
+                }
             }
-            sampleCount += numElems;
+
+            if (!hasNonZero) {
+                QThread::usleep(100);
+                continue;
+            }
             int ret = m_dev->writeStream(stream, buffs.data(), numElems, writeFlags, timeNs, timeoutUs);
 
             if (ret == SOAPY_SDR_TIMEOUT)
             {
-                qWarning("SoapySDROutputThread::run: timeout");
+                m_underflows++;
+                qWarning("SoapySDROutputThread::run: timeout: flags: %d timeNs: %lld timeoutUs: %ld", writeFlags, timeNs, timeoutUs);
             }
             else if (ret == SOAPY_SDR_OVERFLOW)
             {
-                qWarning("SoapySDROutputThread::run: overflow");
+                m_underflows++;
+                qWarning("SoapySDROutputThread::run: overflow: flags: %d timeNs: %lld timeoutUs: %ld", writeFlags, timeNs, timeoutUs);
             }
             else if (ret < 0)
             {
+                m_errors++;
                 qCritical("SoapySDROutputThread::run: Unexpected write stream error: %s", SoapySDR::errToStr(ret));
                 break;
             }
             else if (ret > 0)
             {
+                m_packets++;
             }
 
-            // Pace at real-time rate: each MTU write represents
-            // numElems/sps seconds of data.  Sleep 80% of that to
-            // keep the UHD buffer from filling while still maintaining
-            // continuous flow.  Without pacing the tight loop fills
-            // the USB/UHD buffer → timeout → LIBUSB crash.
-            if (sps > 0) {
-                unsigned long sleepUs = static_cast<unsigned long>(
-                    (static_cast<double>(numElems) / sps) * 0.8 * 1e6);
-                QThread::usleep(std::max(sleepUs, 100UL));
-            }
         }
 
         qDebug("SoapySDROutputThread::run: stop running loop");
@@ -591,4 +586,12 @@ void SoapySDROutputThread::callbackPartF(float* buf, SampleVector& data, unsigne
             break;
         }
     }
+}
+
+void SoapySDROutputThread::getStreamStatus(bool& active, quint64& packets, quint32& underflows, quint32& errors)
+{
+    active = m_packets > 0;
+    packets = m_packets;
+    underflows = m_underflows;
+    errors = m_errors;
 }
