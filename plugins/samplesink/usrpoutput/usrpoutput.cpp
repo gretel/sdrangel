@@ -332,22 +332,24 @@ bool USRPOutput::acquireChannel()
             // (LIBUSB_ERROR_NO_DEVICE on rxN/txN submit). Lock auto_tick_rate
             // to false so the existing MCR (set by RX) is kept and only the
             // TX decimators are reconfigured.
-            if (m_deviceAPI->getSourceBuddies().size() > 0)
+            // Disable auto_tick_rate so that the MCR pinned at device open
+            // (via SDRANGEL_USRP_MASTER_CLOCK_RATE_HZ env var or device args)
+            // is preserved across subsequent set_tx_rate() calls. Without this,
+            // UHD re-derives the MCR on set_tx_rate() even when MCR was already
+            // set explicitly, breaking the rate decimator chain.
+            try
             {
-                try
+                uhd::property_tree::sptr props = usrp->get_device()->get_tree();
+                if (props->exists("/mboards/0/auto_tick_rate"))
                 {
-                    uhd::property_tree::sptr props = usrp->get_device()->get_tree();
-                    if (props->exists("/mboards/0/auto_tick_rate"))
-                    {
-                        props->access<bool>("/mboards/0/auto_tick_rate").set(false);
-                        qWarning("USRPOutput::acquireChannel: locked auto_tick_rate=false (buddy-share TX, current MCR=%f)",
-                                 usrp->get_master_clock_rate());
-                    }
+                    props->access<bool>("/mboards/0/auto_tick_rate").set(false);
+                    qWarning("USRPOutput::acquireChannel: locked auto_tick_rate=false (current MCR=%f)",
+                             usrp->get_master_clock_rate());
                 }
-                catch (const std::exception& e)
-                {
-                    qWarning() << "USRPOutput::acquireChannel: auto_tick_rate lock failed:" << e.what();
-                }
+            }
+            catch (const std::exception& e)
+            {
+                qWarning() << "USRPOutput::acquireChannel: auto_tick_rate lock failed:" << e.what();
             }
 
             // Apply settings before creating stream
