@@ -358,6 +358,16 @@ bool USRPOutput::acquireChannel()
             usrp->set_tx_bandwidth(56000000, m_deviceShared.m_channel);
 
             // set up the stream
+            // Single-channel TX. Earlier code attempted a dual-channel TX
+            // workaround (push_back the other channel + zero-fill it in the
+            // thread) targeted at the SoapyUHD-style "STREAM_ERROR after
+            // set_radio" issue, but it was incompatible with B210 buddy-share:
+            // dual-channel TX caps the master clock rate at 30.72 MHz, while
+            // the buddy RX side at 1 Msps drives MCR up to 32 MHz. The thread
+            // also only supplied one buffer to send() so the dual-channel
+            // streamer was already malformed. The auto_tick_rate=false lock
+            // above (buddy-share branch) keeps the AD9361 stable enough that
+            // single-channel TX initialises cleanly.
             std::string cpu_format("sc16");
             std::string wire_format("sc16");
             std::vector<size_t> channel_nums;
@@ -365,8 +375,6 @@ bool USRPOutput::acquireChannel()
 
             uhd::stream_args_t stream_args(cpu_format, wire_format);
             stream_args.channels = channel_nums;
-            stream_args.args["num_send_frames"] = "512";
-            stream_args.args["send_frame_size"] = "16360";
 
             m_streamId = usrp->get_tx_stream(stream_args);
 
@@ -435,13 +443,8 @@ bool USRPOutput::start()
         return false;
     }
 
-    uhd::usrp::multi_usrp::sptr dev = m_deviceShared.m_deviceParams->getDevice();
-    size_t numChannels = m_streamId->get_num_channels();
-
-    m_usrpOutputThread = new USRPOutputThread(
-        m_streamId, m_bufSamples, &m_sampleSourceFifo,
-        dev, numChannels, 0);
-    qDebug("USRPOutput::start: thread created channels=%zu", numChannels);
+    m_usrpOutputThread = new USRPOutputThread(m_streamId, m_bufSamples, &m_sampleSourceFifo);
+    qDebug("USRPOutput::start: thread created");
 
     m_usrpOutputThread->setLog2Interpolation(m_settings.m_log2SoftInterp);
     m_usrpOutputThread->startWork();
@@ -699,15 +702,14 @@ bool USRPOutput::handleMessage(const Message& message)
                 bool active;
                 quint32 underflows;
                 quint32 droppedPackets;
-                quint32 errors;
 
-                m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets, errors);
+                m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets);
                 MsgReportStreamInfo *report = MsgReportStreamInfo::create(
                         true, // success
                         active,
                         underflows,
                         droppedPackets,
-                        errors
+                        0
                         );
                 m_deviceAPI->getSamplingDeviceGUIMessageQueue()->push(report);
             }
@@ -1203,11 +1205,10 @@ void USRPOutput::webapiFormatDeviceReport(SWGSDRangel::SWGDeviceReport& response
     bool active = false;
     quint32 underflows = 0;
     quint32 droppedPackets = 0;
-    quint32 errors = 0;
 
     if ((m_streamId != nullptr) && (m_usrpOutputThread != nullptr) && m_channelAcquired)
     {
-        m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets, errors);
+        m_usrpOutputThread->getStreamStatus(active, underflows, droppedPackets);
         success = true;
     }
 
@@ -1215,7 +1216,6 @@ void USRPOutput::webapiFormatDeviceReport(SWGSDRangel::SWGDeviceReport& response
     response.getUsrpOutputReport()->setStreamActive(active ? 1 : 0);
     response.getUsrpOutputReport()->setUnderrunCount(underflows);
     response.getUsrpOutputReport()->setDroppedPacketsCount(droppedPackets);
-    // Note: errors count not exposed via SWGUSRPOutputReport — add field to swagger spec when next updated
 }
 
 void USRPOutput::webapiReverseSendSettings(const QList<QString>& deviceSettingsKeys, const USRPOutputSettings& settings, bool force)

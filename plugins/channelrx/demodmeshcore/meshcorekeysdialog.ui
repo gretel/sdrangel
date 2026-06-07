@@ -17,9 +17,14 @@
    <item>
     <widget class="QLabel" name="helpLabel">
      <property name="text">
-      <string>One key entry per line (or comma/semicolon separated).
-Formats: default, none, simple1..simple10, hex:&lt;hex&gt;, b64:&lt;base64&gt;, base64:&lt;base64&gt;, raw hex, raw base64.
-Optional channel mapping: channelName=keySpec (example: public=default).</string>
+      <string>MeshCore key spec — semicolon-separated entries:
+
+  channel:&lt;name&gt;=&lt;32hex&gt;   16-byte channel PSK in hex
+  channel:public=public   built-in public channel PSK
+  identity=&lt;64hex&gt;        32-byte Ed25519 public key
+  contact:&lt;name&gt;=&lt;64hex&gt;   known peer pubkey with name
+
+  Example: channel:public=public;identity=aabbccdd...</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -32,9 +37,7 @@ Optional channel mapping: channelName=keySpec (example: public=default).</string
       <string>Enter one or more key specs used to decrypt Meshcore packets.</string>
      </property>
       <property name="placeholderText">
-       <string>default
-public=default
-mychannel=hex:00112233445566778899aabbccddeeff</string>
+       <string>channel:public=public;contact:Alice=aabbccdd...</string>
       </property>
     </widget>
    </item>
