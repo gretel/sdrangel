@@ -153,8 +153,13 @@ void USRPOutputThread::run()
 
         try
         {
-            size_t sentSamples = m_stream->send(m_buf, writtenSamples, md, 0.01);
-            m_packets++;
+            size_t sentSamples = m_stream->send(m_buf, writtenSamples, md, 0.1);
+            if (sentSamples > 0) {
+                m_packets++;
+                QThread::usleep(100); // pace to prevent USB saturation
+            } else {
+                m_underflows++;
+            }
         }
         catch (std::exception& e)
         {

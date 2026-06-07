@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: trailing-whitespace
+        name: trailing-whitespace
+        entry: bash -c 'for f in "$@"; do if grep -q "[[:space:]]$" "$f"; then echo "trailing whitespace in $f"; exit 1; fi; done'
+        language: system
+        files: \.(cpp|h|py|md|yaml)$
+        args: []
+      - id: end-of-file-fixer
+        name: end-of-file-fixer
+        entry: bash -c 'for f in "$@"; do [ -s "$f" ] && tail -c1 < "$f" | read -r _ || echo >> "$f"; done'
+        language: system
+        files: \.(cpp|h|py|md|yaml)$
+        args: []

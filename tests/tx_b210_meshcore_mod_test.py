@@ -226,8 +226,11 @@ def main() -> int:
         env = os.environ.copy()
         env.setdefault("UHD_IMAGES_DIR",
             "/Users/tom/src/uhd/ettus-uhd-oc/install/share/uhd/images")
+        argv = [str(SDRANGEL_BIN)]
+        if args.soapy:
+            argv.append("--soapy")
         sdr_proc = subprocess.Popen(
-            [str(SDRANGEL_BIN)],
+            argv,
             stdout=open(logfile, "w"), stderr=subprocess.STDOUT,
             env=env,
         )
