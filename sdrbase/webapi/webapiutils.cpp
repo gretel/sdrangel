@@ -164,6 +164,8 @@ const QMap<QString, QString> WebAPIUtils::m_channelTypeToSettingsKey = {
     {"ChannelAnalyzer", "ChannelAnalyzerSettings"},
     {"ChirpChatDemod", "ChirpChatDemodSettings"},
     {"MeshtasticDemod", "ChirpChatDemodSettings"}, // alias: Meshtastic uses ChirpChatDemodSettings schema
+    {"MeshcoreDemod", "MeshtasticDemodSettings"},  // alias: MeshCore reuses MeshtasticDemodSettings schema (donor template)
+    {"MeshcoreMod", "MeshtasticModSettings"},      // alias: MeshCore reuses MeshtasticModSettings schema (donor template)
     {"ChirpChatMod", "ChirpChatModSettings"},
     {"ChannelPower", "ChannelPowerSettings"},
     {"DATVDemod", "DATVDemodSettings"},
@@ -222,6 +224,7 @@ const QMap<QString, QString> WebAPIUtils::m_channelTypeToActionsKey = {
     {"FileSink", "FileSinkActions"},
     {"FileSource", "FileSourceActions"},
     {"FreqScanner", "FreqScannerActions"},
+    {"MeshcoreMod", "MeshcoreModActions"},
     {"SigMFFileSink", "SigMFFileSinkActions"},
     {"IEEE_802_15_4_Mod", "IEEE_802_15_4_ModActions"},
     {"RadioAstronomy", "RadioAstronomyActions"},

@@ -226,7 +226,7 @@ public:
     void removeChannelMarker(ChannelMarker* channelMarker);
     void setMessageQueueToGUI(MessageQueue* messageQueue) { m_messageQueueToGUI = messageQueue; }
 
-    virtual void newSpectrum(const Real* spectrum, int fftSize);
+    void newSpectrum(const Real* spectrum, int fftSize) override;
     void clearSpectrumHistogram();
 
     Real getWaterfallShare() const { return m_waterfallShare; }
@@ -527,9 +527,9 @@ private:
     void update3DSpectrogram(const Real *spectrum, int fftSize, int fftMin, int nbBins);
     void updateHistogram(const Real *spectrum, int fftMin, int nbBins);
 
-    void initializeGL();
-    void resizeGL(int width, int height);
-    void paintGL();
+    void initializeGL() override;
+    void resizeGL(int width, int height) override;
+    void paintGL() override;
     void drawPowerBandMarkers(float max, float min, const QVector4D &color);
     void drawBandwidthMarkers(int64_t centerFrequency, int bandwidth, const QVector4D &color);
     void drawPeakMarkers(int64_t startFrequency, int64_t endFrequency, const QVector4D &color);
@@ -556,11 +556,11 @@ private:
     void stopDrag();
     void applyChanges();
 
-    bool event(QEvent* event);
-    void mouseMoveEvent(QMouseEvent* event);
-    void mousePressEvent(QMouseEvent* event);
-    void mouseReleaseEvent(QMouseEvent* event);
-    void wheelEvent(QWheelEvent*);
+    bool event(QEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent*) override;
     void channelMarkerMove(QWheelEvent*, int mul);
     void zoomFactor(const QPointF& p, float factor);
     void zoom(const QPointF& p, int y);
@@ -576,8 +576,8 @@ private:
     bool pointInWaterfallOrSpectrogram(const QPointF &point) const;
     bool pointInHistogram(const QPointF &point) const;
 
-    void enterEvent(EnterEventType* event);
-    void leaveEvent(QEvent* event);
+    void enterEvent(EnterEventType* event) override;
+    void leaveEvent(QEvent* event) override;
 
     static QString displayFull(int64_t value);
     static QString displayScaled(int64_t value, char type, int precision, bool showMult);
@@ -651,7 +651,7 @@ private slots:
     void channelMarkerChanged();
     void channelMarkerDestroyed(QObject* object);
     void openGLDebug(const QOpenGLDebugMessage &debugMessage);
-    bool eventFilter(QObject *object, QEvent *event);
+    bool eventFilter(QObject *object, QEvent *event) override;
     void scrollBarValueChanged(int value);
 
 signals:

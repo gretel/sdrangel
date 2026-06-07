@@ -160,7 +160,7 @@ bool USRPOutput::openDevice()
         qDebug("USRPOutput::openDevice: look in Rx buddies");
 
         DeviceAPI *sourceBuddy = m_deviceAPI->getSourceBuddies()[0];
-        //m_deviceShared = *((DeviceUSRPShared *) sourceBuddy->getBuddySharedPtr()); // copy parameters
+        // Copy parameters from Rx buddy (shared multi_usrp handle)
         DeviceUSRPShared *deviceUSRPShared = (DeviceUSRPShared*) sourceBuddy->getBuddySharedPtr();
         m_deviceShared.m_deviceParams = deviceUSRPShared->m_deviceParams;
 
@@ -322,12 +322,50 @@ bool USRPOutput::acquireChannel()
         {
             uhd::usrp::multi_usrp::sptr usrp = m_deviceShared.m_deviceParams->getDevice();
 
+            // B210/B220 buddy-share MCR pinning.
+            // When this TX is buddy-sharing a multi_usrp handle that an RX side
+            // already opened, UHD's auto_tick_rate is true (set by
+            // DeviceUSRPParams::open for B210). The set_tx_rate() call below
+            // (via applySettings -> line ~756) would then auto-derive a new
+            // master clock rate (e.g. 16 MHz for 250 ksps TX), which on B210
+            // tears down the AD9361 and kills the RX USB URB chain
+            // (LIBUSB_ERROR_NO_DEVICE on rxN/txN submit). Lock auto_tick_rate
+            // to false so the existing MCR (set by RX) is kept and only the
+            // TX decimators are reconfigured.
+            if (m_deviceAPI->getSourceBuddies().size() > 0)
+            {
+                try
+                {
+                    uhd::property_tree::sptr props = usrp->get_device()->get_tree();
+                    if (props->exists("/mboards/0/auto_tick_rate"))
+                    {
+                        props->access<bool>("/mboards/0/auto_tick_rate").set(false);
+                        qWarning("USRPOutput::acquireChannel: locked auto_tick_rate=false (buddy-share TX, current MCR=%f)",
+                                 usrp->get_master_clock_rate());
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    qWarning() << "USRPOutput::acquireChannel: auto_tick_rate lock failed:" << e.what();
+                }
+            }
+
             // Apply settings before creating stream
             // However, don't set LPF to <10MHz at this stage, otherwise there is massive TX LO leakage
             applySettings(m_settings, QList<QString>(), true, true);
             usrp->set_tx_bandwidth(56000000, m_deviceShared.m_channel);
 
             // set up the stream
+            // Single-channel TX. Earlier code attempted a dual-channel TX
+            // workaround (push_back the other channel + zero-fill it in the
+            // thread) targeted at the SoapyUHD-style "STREAM_ERROR after
+            // set_radio" issue, but it was incompatible with B210 buddy-share:
+            // dual-channel TX caps the master clock rate at 30.72 MHz, while
+            // the buddy RX side at 1 Msps drives MCR up to 32 MHz. The thread
+            // also only supplied one buffer to send() so the dual-channel
+            // streamer was already malformed. The auto_tick_rate=false lock
+            // above (buddy-share branch) keeps the AD9361 stable enough that
+            // single-channel TX initialises cleanly.
             std::string cpu_format("sc16");
             std::string wire_format("sc16");
             std::vector<size_t> channel_nums;
@@ -349,15 +387,22 @@ bool USRPOutput::acquireChannel()
         }
         catch (std::exception& e)
         {
-            qDebug() << "USRPOutput::acquireChannel: exception: " << e.what();
+            qCritical() << "USRPOutput::acquireChannel: exception: " << e.what();
+            m_streamId = nullptr;
         }
     }
 
     resumeTxBuddies();
     resumeRxBuddies();
 
-    m_channelAcquired = true;
+    if (m_streamId == nullptr)
+    {
+        qCritical("USRPOutput::acquireChannel: failed to create TX stream");
+        m_channelAcquired = false;
+        return false;
+    }
 
+    m_channelAcquired = true;
     return true;
 }
 
