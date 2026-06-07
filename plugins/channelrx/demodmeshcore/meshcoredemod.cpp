@@ -546,8 +546,8 @@ QString syncWordToPacketType(uint8_t syncWord)
 {
     switch (syncWord)
     {
-    case 0x2B: return QStringLiteral("meshcore");
-    case 0x12: return QStringLiteral("lorawan");
+    case 0x2B: return QStringLiteral("chirpchat");
+    case 0x12: return QStringLiteral("meshcore");
     case 0x43: return QStringLiteral("helium");
     case 0x00: return QStringLiteral("unset");
     default:   return QStringLiteral("custom");
