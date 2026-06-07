@@ -84,7 +84,7 @@ void MeshcoreDemodSettings::resetToDefaults()
     m_decodeActive = true;
     m_eomSquelchTenths = 60;
     m_nbSymbolsMax = 1023;
-    m_preambleChirps = 16;
+    m_preambleChirps = 8;   // MeshCore EU868 standard
     m_packetLength = 237;
     m_nbParityBits = 4;             // CR 4/8 (MeshCore EU)
     m_sendViaUDP = false;
@@ -201,7 +201,7 @@ bool MeshcoreDemodSettings::deserialize(const QByteArray& data)
         d.readU32(11, &m_nbSymbolsMax, 1023);
         d.readS32(12, &m_packetLength, 237);
         d.readS32(13, &m_nbParityBits, 1);
-        d.readU32(17, &m_preambleChirps, 17);
+        d.readU32(17, &m_preambleChirps, 8);
         d.readBool(19, &m_invertRamps, false);
         d.readBool(20, &m_useReverseAPI, false);
         d.readString(21, &m_reverseAPIAddress, "127.0.0.1");

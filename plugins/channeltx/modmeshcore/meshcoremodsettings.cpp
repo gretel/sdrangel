@@ -77,7 +77,7 @@ void MeshcoreModSettings::resetToDefaults()
     m_bandwidthIndex = 18;          // 62500 Hz
     m_spreadFactor = 8;
     m_deBits = 0;
-    m_preambleChirps = 16;          // MeshCore standard preamble length (matches demod default)
+    m_preambleChirps = 8;           // MeshCore EU868 standard preamble chirps
     m_quietMillis = 1000;
     m_nbParityBits = 4;             // CR 4/8
     m_syncWord = 0x12;              // MeshCore wire sync (verify against firmware)
@@ -232,7 +232,7 @@ bool MeshcoreModSettings::deserialize(const QByteArray& data)
         d.readBool(8, &m_channelMute, false);
         d.readU32(9, &utmp, 0x34);
         m_syncWord = utmp > 255 ? 0 : utmp;
-        d.readU32(10, &m_preambleChirps, 17);
+        d.readU32(8, &m_preambleChirps, 8);
         d.readS32(11, &m_quietMillis, 1000);
         d.readBool(12, &m_invertRamps, false);
         d.readString(28, &m_textMessage, "Hello Meshcore");

@@ -36,7 +36,7 @@ constexpr int kDefaultBandwidthHz = 62500;
 constexpr int kDefaultSpreadFactor = 8;
 constexpr int kDefaultParityBits = 4;            // 4 -> CR 4/8
 constexpr uint8_t kDefaultSyncWord = 0x12;       // MeshCore wire sync (verify against firmware)
-constexpr int kDefaultPreambleChirps = 8;        // shorter than meshtastic's 17
+constexpr int kDefaultPreambleChirps = 8;        // MeshCore EU868 standard
 constexpr qint64 kDefaultCenterFrequencyHz = 869618000LL;
 
 // ---- Crypto sizes (MeshCore wire spec) ----
