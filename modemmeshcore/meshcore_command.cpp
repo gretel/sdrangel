@@ -172,6 +172,10 @@ bool applyRadioParams(const QMap<QString, QString>& kv, TxRadioSettings& setting
         if (!applyMeshcorePreset(presetS, settings, error)) {
             return false;
         }
+        // SF-dependent preamble preamble: SF < 9 → 32, SF > 8 → 16.
+        // Matches upstream meshcore-py commit 2026-06.
+        if (settings.spreadFactor < 9) { settings.preambleChirps = 32; }
+        else { settings.preambleChirps = 16; }
         changed = true;
     }
 

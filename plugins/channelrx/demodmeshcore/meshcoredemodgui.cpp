@@ -1822,7 +1822,7 @@ MeshcoreDemodGUI::MeshcoreDemodGUI(PluginAPI* pluginAPI, DeviceUISet *deviceUISe
     ui->deBits->setToolTip(tr("Low data-rate optimization bits (DE)."));
     ui->deBitsLabel->setToolTip(tr("Low data-rate optimization setting."));
     ui->deBitsText->setToolTip(tr("Current low data-rate optimization value."));
-    ui->preambleChirps->setToolTip(tr("Expected LoRa preamble chirp count. MeshCore EU868 uses 8."));
+    ui->preambleChirps->setToolTip(tr("LoRa preamble chirps. MeshCore: 32 for SF<9, 16 for SF>8 (SF-based auto-set on preset)."));
     ui->preambleChirpsLabel->setToolTip(tr("Expected LoRa preamble length in chirps."));
     ui->preambleChirpsText->setToolTip(tr("Current preamble chirp value."));
     ui->mute->setToolTip(tr("Disable decoder output."));
